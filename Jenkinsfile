@@ -1,5 +1,10 @@
 pipeline {
   agent any
+
+  tools {
+        jdk 'jdk11'
+        maven 'maven3'
+  }
   environment {
     DOCKERHUB_REPO = 'thedk/notes-app-ci'
     IMAGE_TAG = "${env.BUILD_NUMBER}"
@@ -20,10 +25,7 @@ pipeline {
       }
     }
     stage('Set up JDK and Maven') {
-      tools {
-        jdk 'jdk11'
-        maven 'maven3'
-      }
+      
       steps {
         sh 'java -version'
         sh 'mvn -v'

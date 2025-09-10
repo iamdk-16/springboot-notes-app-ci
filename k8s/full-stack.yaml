@@ -44,7 +44,7 @@ spec:
     spec:
       containers:
       - name: notes-app
-        image: your-dockerhub/notes-app:latest
+        image: image: thedk/notes-app-ci:latest
         ports:
         - containerPort: 8081
         env:
