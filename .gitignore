@@ -1,0 +1,70 @@
+# Java/Maven
+target/
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+*.class
+*.log
+*.tmp
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDE
+.vscode/
+.idea/
+*.iws
+*.iml
+*.ipr
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Docker
+.dockerignore
+
+# Kubernetes secrets (if any)
+*.key
+*.pem
+*.crt
+secrets/
+kubeconfig*
+
+# Jenkins/CI-CD
+.jenkins/
+jenkins.log
+build.log
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.test
+
+# Temporary files
+tmp/
+temp/
+logs/
+*.pid
+
+# Security/Credentials (NEVER commit these)
+**/credentials.xml
+**/secrets.xml
+docker-compose.override.yml
+
