@@ -118,8 +118,9 @@ springboot-notes-app-ci/
 ![Notes App Main Page](screenshots/notes_app.png)
 
 #### **🔧 Jenkins CI/CD Pipeline** 
-![Jenkins Pipeline](screenshots/pipeline_Overview.png)
-![Jenkins Pipeline](screenshots/pipeline_Overview_2.png)
+![Jenkins Pipeline](screenshots/Jenkins_pipeline.png)
+
+![Jenkins Pipeline](screenshots/Jenkins_pipeline_2.png)
 
 #### **📊 Prometheus Monitoring**
 ![Prometheus Targets](screenshots/prometheus.png)
