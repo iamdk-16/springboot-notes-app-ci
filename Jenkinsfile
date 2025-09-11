@@ -1,9 +1,8 @@
 pipeline {
   agent any
-
   tools {
-        jdk 'jdk11'
-        maven 'maven3'
+    jdk 'jdk11'
+    maven 'maven3'
   }
   environment {
     DOCKERHUB_REPO = 'thedk/notes-app-ci'
@@ -25,7 +24,6 @@ pipeline {
       }
     }
     stage('Set up JDK and Maven') {
-      
       steps {
         sh 'java -version'
         sh 'mvn -v'
@@ -69,19 +67,17 @@ pipeline {
     stage('Kubernetes Deploy (kind)') {
       steps {
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
-          sh 'kubectl version --client=true'
-          // Patch the image in the Deployment before apply for immutability-safe deploys
           sh '''
             set -e
-            # Ensure namespace objects apply first (monitoring ns)
-             if grep -q "kind: Namespace" full-stack.yaml; then
+            # Apply namespace and other resources
+            if grep -q "kind: Namespace" full-stack.yaml; then
               kubectl apply -f full-stack.yaml --prune=false
-             else
+            else
               kubectl apply -f full-stack.yaml
-
-            # Force image to the new build tag
+            fi
+            # Patch the image with the new build tag
             kubectl -n default set image deployment/notes-app notes-app=${DOCKERHUB_REPO}:${IMAGE_TAG} --record
-            # Wait for rollout
+            # Wait for rollout to complete
             kubectl -n default rollout status deployment/notes-app --timeout=120s
           '''
         }
@@ -90,7 +86,6 @@ pipeline {
     stage('Smoke Check') {
       steps {
         script {
-          // kind exposes NodePort on the host network; curl localhost:30081/actuator/health
           sh '''
             set -e
             for i in $(seq 1 30); do
@@ -114,4 +109,3 @@ pipeline {
     }
   }
 }
-
