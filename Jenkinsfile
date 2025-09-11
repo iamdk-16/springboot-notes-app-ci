@@ -69,15 +69,12 @@ pipeline {
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
           sh '''
             set -e
-            # Apply namespace and other resources
-            if grep -q "kind: Namespace" full-stack.yaml; then
-              kubectl apply -f full-stack.yaml --prune=false
+            if grep -q "kind: Namespace" k8s/full-stack.yaml; then
+              kubectl apply -f k8s/full-stack.yaml --prune=false
             else
-              kubectl apply -f full-stack.yaml
+              kubectl apply -f k8s/full-stack.yaml
             fi
-            # Patch the image with the new build tag
             kubectl -n default set image deployment/notes-app notes-app=${DOCKERHUB_REPO}:${IMAGE_TAG} --record
-            # Wait for rollout to complete
             kubectl -n default rollout status deployment/notes-app --timeout=120s
           '''
         }
