@@ -74,11 +74,11 @@ pipeline {
           sh '''
             set -e
             # Ensure namespace objects apply first (monitoring ns)
-            if grep -q "kind: Namespace" k8s/manifest.yaml; then
-              kubectl apply -f k8s/manifest.yaml --prune=false
-            else
-              kubectl apply -f k8s/manifest.yaml
-            fi
+             if grep -q "kind: Namespace" full-stack.yaml; then
+              kubectl apply -f full-stack.yaml --prune=false
+             else
+              kubectl apply -f full-stack.yaml
+
             # Force image to the new build tag
             kubectl -n default set image deployment/notes-app notes-app=${DOCKERHUB_REPO}:${IMAGE_TAG} --record
             # Wait for rollout
