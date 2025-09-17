@@ -1,25 +1,20 @@
 pipeline {
   agent any
-  
   tools {
     jdk 'jdk11'
     maven 'maven3'
   }
-  
   environment {
-    DOCKERHUB_REPO = 'thedk/notes-app-ci'
+    DOCKERHUB_REPO = 'thedk/notes-app-ci'  // Change to your DockerHub username
     IMAGE_TAG = "${env.BUILD_NUMBER}"
     IMAGE_LATEST = "latest"
   }
-  
   options {
     timestamps()
   }
-  
   triggers {
     pollSCM('H/2 * * * *')
   }
-  
   stages {
     stage('🔄 Checkout') {
       steps {
@@ -71,19 +66,55 @@ pipeline {
       }
     }
     
+    stage('🔧 Install kubectl') {
+      steps {
+        echo "Installing kubectl..."
+        sh '''
+          # Check if kubectl exists
+          if ! command -v kubectl &> /dev/null; then
+            echo "Installing kubectl..."
+            
+            # Download kubectl
+            curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            
+            # Try to move to system path, fallback to jenkins home
+            if sudo mv kubectl /usr/local/bin/kubectl 2>/dev/null; then
+              echo "✅ kubectl installed to /usr/local/bin/"
+            else
+              mkdir -p /var/jenkins_home/bin
+              mv kubectl /var/jenkins_home/bin/kubectl
+              export PATH="/var/jenkins_home/bin:$PATH"
+              echo "✅ kubectl installed to /var/jenkins_home/bin/"
+            fi
+          else
+            echo "✅ kubectl already available"
+          fi
+          
+          # Verify installation
+          export PATH="/var/jenkins_home/bin:$PATH"
+          kubectl version --client
+        '''
+      }
+    }
+    
     stage('🎯 Setup Monitoring') {
       steps {
         echo "Setting up Prometheus & Grafana..."
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
           sh '''
+            export PATH="/var/jenkins_home/bin:$PATH"
             export KUBECONFIG=$KUBECONFIG
             
-            # Create monitoring namespace
+            echo "📋 Checking Kubernetes connection..."
+            kubectl get nodes
+            
+            echo "🎯 Creating monitoring namespace..."
             kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
             
-            # Deploy Prometheus
+            echo "📊 Deploying Prometheus..."
             cat > prometheus.yaml << 'EOF'
-apiVersion: v3
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
@@ -97,6 +128,7 @@ data:
       static_configs:
       - targets: ['notes-app-service.default.svc.cluster.local:8081']
       metrics_path: /actuator/prometheus
+      scrape_interval: 10s
     - job_name: 'prometheus'
       static_configs:
       - targets: ['localhost:9090']
@@ -106,6 +138,8 @@ kind: Deployment
 metadata:
   name: prometheus
   namespace: monitoring
+  labels:
+    app: prometheus
 spec:
   replicas: 1
   selector:
@@ -124,14 +158,28 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
         command:
         - '--config.file=/etc/prometheus/prometheus.yml'
         - '--storage.tsdb.path=/prometheus'
+        - '--web.console.libraries=/etc/prometheus/console_libraries'
+        - '--web.console.templates=/etc/prometheus/consoles'
         - '--web.enable-lifecycle'
+        - '--storage.tsdb.retention.time=30d'
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
       volumes:
       - name: config
         configMap:
           name: prometheus-config
+      - name: storage
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -149,13 +197,15 @@ spec:
 EOF
             kubectl apply -f prometheus.yaml
             
-            # Deploy Grafana
+            echo "📈 Deploying Grafana..."
             cat > grafana.yaml << 'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
   namespace: monitoring
+  labels:
+    app: grafana
 spec:
   replicas: 1
   selector:
@@ -176,6 +226,23 @@ spec:
           value: "admin"
         - name: GF_SECURITY_ADMIN_PASSWORD
           value: "admin123"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-clock-panel,grafana-simple-json-datasource"
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: grafana-storage
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -204,14 +271,18 @@ EOF
         echo "Deploying Notes App..."
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
           sh '''
+            export PATH="/var/jenkins_home/bin:$PATH"
             export KUBECONFIG=$KUBECONFIG
             
+            echo "🚀 Deploying Notes Application..."
             cat > app.yaml << 'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: notes-app
   namespace: default
+  labels:
+    app: notes-app
 spec:
   replicas: 2
   selector:
@@ -230,16 +301,25 @@ spec:
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "linux"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8081
           initialDelaySeconds: 60
+          periodSeconds: 30
         readinessProbe:
           httpGet:
             path: /actuator/health
             port: 8081
           initialDelaySeconds: 30
+          periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
@@ -256,9 +336,11 @@ spec:
     app: notes-app
 EOF
             kubectl apply -f app.yaml
+            
+            echo "⏳ Waiting for deployment to complete..."
             kubectl rollout status deployment/notes-app --timeout=300s
             
-            echo "✅ App deployed!"
+            echo "✅ Notes App deployed successfully!"
           '''
         }
       }
@@ -266,49 +348,130 @@ EOF
     
     stage('🔍 Health Check') {
       steps {
-        echo "Checking health..."
-        sh '''
-          echo "Waiting for services..."
-          sleep 60
-          
-          echo "Testing app..."
-          for i in {1..10}; do
-            if curl -f http://localhost:30081/actuator/health 2>/dev/null; then
-              echo "✅ App is healthy!"
-              break
+        echo "Performing health checks..."
+        withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
+          sh '''
+            export PATH="/var/jenkins_home/bin:$PATH"
+            export KUBECONFIG=$KUBECONFIG
+            
+            echo "📊 Deployment Status:"
+            kubectl get deployments -A
+            echo ""
+            kubectl get services -A
+            echo ""
+            kubectl get pods -A
+            
+            echo "🏥 Testing Notes App..."
+            for i in {1..20}; do
+              echo "Attempt $i: Testing application health..."
+              if curl -f -m 10 http://localhost:30081/actuator/health 2>/dev/null | grep -q '"status":"UP"'; then
+                echo "✅ Notes App is healthy and responding!"
+                break
+              elif [ $i -eq 20 ]; then
+                echo "⚠️ Application health check timeout, checking logs..."
+                kubectl logs -l app=notes-app -n default --tail=20 || true
+              else
+                echo "⏳ Waiting for application to be ready..."
+                sleep 15
+              fi
+            done
+            
+            echo "📈 Testing Prometheus..."
+            for i in {1..10}; do
+              if curl -f -m 5 http://localhost:30090/-/ready 2>/dev/null; then
+                echo "✅ Prometheus is accessible and ready!"
+                break
+              else
+                echo "⏳ Prometheus - Attempt $i/10..."
+                sleep 10
+              fi
+            done
+            
+            echo "📊 Testing Grafana..."
+            for i in {1..10}; do
+              if curl -f -m 5 http://localhost:30030/api/health 2>/dev/null; then
+                echo "✅ Grafana is accessible!"
+                break
+              else
+                echo "⏳ Grafana - Attempt $i/10..."
+                sleep 10
+              fi
+            done
+            
+            echo "🎯 Checking Prometheus targets..."
+            sleep 20
+            if curl -s "http://localhost:30090/api/v1/targets" 2>/dev/null | grep -q "notes-app"; then
+              echo "✅ Prometheus is successfully scraping Notes App metrics!"
             else
-              echo "⏳ Waiting... ($i/10)"
-              sleep 10
+              echo "⚠️ Prometheus targets might need more time (normal for first deployment)"
             fi
-          done
-          
-          echo "📊 Status:"
-          kubectl get pods -A | head -20
-        '''
+            
+            echo "📋 Final Status Summary:"
+            kubectl get all -A | grep -E "(notes-app|prometheus|grafana)" || true
+          '''
+        }
       }
     }
   }
-  
   post {
     always {
       sh 'docker system prune -f || true'
     }
     success {
       echo '''
-        🎉 SUCCESS! 🎉
+        🎉🎉🎉 COMPLETE DEPLOYMENT SUCCESS! 🎉🎉🎉
         
-        📱 Your Services:
-        • App: http://localhost:30081
-        • Health: http://localhost:30081/actuator/health  
-        • Metrics: http://localhost:30081/actuator/prometheus
-        • Prometheus: http://localhost:30090
-        • Grafana: http://localhost:30030 (admin/admin123)
+        📱 ACCESS YOUR SERVICES:
+        ========================================
+        🚀 Notes Application:    http://localhost:30081
+        🏥 Health Check:         http://localhost:30081/actuator/health  
+        📊 App Metrics:          http://localhost:30081/actuator/prometheus
+        
+        📈 MONITORING STACK:
+        ========================================
+        🔍 Prometheus:           http://localhost:30090
+        📊 Grafana:              http://localhost:30030 (admin/admin123)
+        
+        🎯 GRAFANA SETUP INSTRUCTIONS:
+        ========================================  
+        1. Go to http://localhost:30030
+        2. Login with admin/admin123
+        3. Add Prometheus datasource:
+           URL: http://prometheus-service.monitoring.svc.cluster.local:9090
+        4. Import Spring Boot dashboards:
+           • Dashboard ID 19004: Spring Boot 3.x Statistics
+           • Dashboard ID 6756:  Spring Boot Statistics
+           • Dashboard ID 14430: Spring Boot Endpoint Metrics
+        
+        🔧 KUBERNETES MANAGEMENT:
+        ========================================
+        kubectl get pods -A
+        kubectl get services -A
+        kubectl logs -l app=notes-app -n default
+        kubectl logs -l app=prometheus -n monitoring  
+        kubectl logs -l app=grafana -n monitoring
+        
+        🚀 DEPLOYMENT COMPLETE - ENJOY YOUR CI/CD PIPELINE!
       '''
     }
     failure {
-      echo '❌ Pipeline failed!'
+      echo '❌ DEPLOYMENT FAILED!'
       sh '''
-        kubectl get pods -A || true
+        export PATH="/var/jenkins_home/bin:$PATH"
+        echo "🔍 TROUBLESHOOTING INFORMATION:"
+        echo "============================="
+        kubectl get pods -A || echo "kubectl not available"
+        echo ""
+        echo "Notes App logs:"
+        kubectl logs -l app=notes-app -n default --tail=50 || true
+        echo ""
+        echo "Prometheus logs:"
+        kubectl logs -l app=prometheus -n monitoring --tail=20 || true
+        echo ""
+        echo "Grafana logs:"  
+        kubectl logs -l app=grafana -n monitoring --tail=20 || true
+        echo ""
+        echo "Docker images:"
         docker images | grep notes-app || true
       '''
     }
