@@ -116,6 +116,7 @@ pipeline {
         echo "Setting up monitoring namespace..."
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'KUBECONFIG')]) {
           sh '''
+<<<<<<< HEAD
             export KUBECONFIG=$KUBECONFIG
             
             echo "📋 Current Kubernetes context:"
@@ -126,6 +127,16 @@ pipeline {
             kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
             
             echo "✅ Monitoring namespace ready!"
+=======
+            set -e
+            if grep -q "kind: Namespace" k8s/full-stack.yaml; then
+              kubectl apply -f k8s/full-stack.yaml --prune=false
+            else
+              kubectl apply -f k8s/full-stack.yaml
+            fi
+            kubectl -n default set image deployment/notes-app notes-app=${DOCKERHUB_REPO}:${IMAGE_TAG} --record
+            kubectl -n default rollout status deployment/notes-app --timeout=120s
+>>>>>>> 6097e76014e62e00c2ee717d46de0d97ccf686fe
           '''
         }
       }
