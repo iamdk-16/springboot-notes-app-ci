@@ -5,7 +5,7 @@ pipeline {
     maven 'maven3'
   }
   environment {
-    DOCKERHUB_REPO = 'thedk/notes-app-ci'  // Change to your DockerHub username
+    DOCKERHUB_REPO = 'thedk/notes-app-ci'  // Change to your actual DockerHub username
     IMAGE_TAG = "${env.BUILD_NUMBER}"
     IMAGE_LATEST = "latest"
   }
@@ -70,15 +70,10 @@ pipeline {
       steps {
         echo "Installing kubectl..."
         sh '''
-          # Check if kubectl exists
           if ! command -v kubectl &> /dev/null; then
             echo "Installing kubectl..."
-            
-            # Download kubectl
             curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
             chmod +x kubectl
-            
-            # Try to move to system path, fallback to jenkins home
             if sudo mv kubectl /usr/local/bin/kubectl 2>/dev/null; then
               echo "✅ kubectl installed to /usr/local/bin/"
             else
@@ -90,8 +85,6 @@ pipeline {
           else
             echo "✅ kubectl already available"
           fi
-          
-          # Verify installation
           export PATH="/var/jenkins_home/bin:$PATH"
           kubectl version --client
         '''
@@ -112,8 +105,15 @@ pipeline {
             echo "🎯 Creating monitoring namespace..."
             kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
             
+            echo "🧹 Cleaning up existing monitoring..."
+            kubectl delete deployment prometheus -n monitoring --ignore-not-found=true
+            kubectl delete service prometheus-service -n monitoring --ignore-not-found=true
+            kubectl delete deployment grafana -n monitoring --ignore-not-found=true
+            kubectl delete service grafana-service -n monitoring --ignore-not-found=true
+            kubectl delete configmap prometheus-config -n monitoring --ignore-not-found=true
+            
             echo "📊 Deploying Prometheus..."
-            cat > prometheus.yaml << 'EOF'
+            cat > prometheus.yaml <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -198,7 +198,7 @@ EOF
             kubectl apply -f prometheus.yaml
             
             echo "📈 Deploying Grafana..."
-            cat > grafana.yaml << 'EOF'
+            cat > grafana.yaml <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -259,7 +259,6 @@ spec:
     app: grafana
 EOF
             kubectl apply -f grafana.yaml
-            
             echo "✅ Monitoring stack deployed!"
           '''
         }
@@ -274,17 +273,25 @@ EOF
             export PATH="/var/jenkins_home/bin:$PATH"
             export KUBECONFIG=$KUBECONFIG
             
-            echo "🚀 Deploying Notes Application..."
-            cat > app.yaml << 'EOF'
+            echo "🔍 Debug info:"
+            echo "DOCKERHUB_REPO: ${DOCKERHUB_REPO}"
+            echo "IMAGE_TAG: ${IMAGE_TAG}"
+            echo "Full image: ${DOCKERHUB_REPO}:${IMAGE_TAG}"
+            
+            echo "🧹 Cleaning up existing deployment..."
+            kubectl delete deployment notes-app --ignore-not-found=true
+            kubectl delete service notes-app-service --ignore-not-found=true
+            
+            echo "🚀 Creating Notes App deployment..."
+            cat > app.yaml <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: notes-app
-  namespace: default
   labels:
     app: notes-app
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: notes-app
@@ -296,11 +303,14 @@ spec:
       containers:
       - name: notes-app
         image: ${DOCKERHUB_REPO}:${IMAGE_TAG}
+        imagePullPolicy: Always
         ports:
         - containerPort: 8081
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "linux"
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m"
         resources:
           requests:
             memory: "256Mi"
@@ -312,20 +322,21 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8081
-          initialDelaySeconds: 60
+          initialDelaySeconds: 90
           periodSeconds: 30
+          timeoutSeconds: 10
         readinessProbe:
           httpGet:
             path: /actuator/health
             port: 8081
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
+          timeoutSeconds: 5
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: notes-app-service
-  namespace: default
 spec:
   type: NodePort
   ports:
@@ -335,12 +346,17 @@ spec:
   selector:
     app: notes-app
 EOF
+            
+            echo "📄 Generated YAML:"
+            cat app.yaml
+            
             kubectl apply -f app.yaml
             
             echo "⏳ Waiting for deployment to complete..."
-            kubectl rollout status deployment/notes-app --timeout=300s
+            kubectl rollout status deployment/notes-app --timeout=600s
             
             echo "✅ Notes App deployed successfully!"
+            kubectl get pods -l app=notes-app
           '''
         }
       }
