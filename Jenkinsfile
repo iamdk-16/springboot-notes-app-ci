@@ -14,7 +14,7 @@ pipeline {
   
   options {
     timestamps()
-    ansiColor('xterm')
+   
   }
   
   triggers {
