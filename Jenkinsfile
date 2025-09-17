@@ -7,7 +7,7 @@ pipeline {
   }
   
   environment {
-    DOCKERHUB_REPO = 'iamdk-16/notes-app-ci'
+    DOCKERHUB_REPO = 'thedk/notes-app-ci'
     IMAGE_TAG = "${env.BUILD_NUMBER}"
     IMAGE_LATEST = "latest"
   }
@@ -83,7 +83,7 @@ pipeline {
             
             # Deploy Prometheus
             cat > prometheus.yaml << 'EOF'
-apiVersion: v1
+apiVersion: v3
 kind: ConfigMap
 metadata:
   name: prometheus-config
