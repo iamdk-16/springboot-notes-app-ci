@@ -1,79 +1,131 @@
-# Memo notes to organize your thoughts and todo items
-# With rich-text editor using SpringBoot, Thymeleaf, JPA, RDBMS, Quilljs and Export to PDF
+🚀 SPRING BOOT NOTES APP WITH DEVOPS PIPELINE
+Complete CI/CD Pipeline with Kubernetes, Docker, Jenkins & Monitoring
+📋 Project Overview
+A Spring Boot Notes application with rich-text editing capabilities, deployed on Kubernetes with complete DevOps automation including CI/CD pipeline and monitoring stack.
 
-----
+🏗️ Technology Stack
+Application:
 
-### Building and running:
+✅ Spring Boot 2.6.10 - Core framework
+
+✅ Spring Security - Authentication
+
+✅ Spring Data JPA - Data persistence
+
+✅ SQLite Database - Data storage
+
+✅ Thymeleaf - Templating engine
+
+✅ QuillJS - Rich-text editor
+
+✅ Maven - Build tool
+
+DevOps Infrastructure:
+
+✅ Docker - Containerization
+
+✅ Kubernetes - Container orchestration
+
+✅ Jenkins - CI/CD pipeline
+
+✅ Prometheus - Monitoring
+
+✅ Grafana - Dashboards
+
+✅ GitHub - Source control
+
+🚀 Quick Start
+Local Development
+bash
+git clone [your-repo-url]
+cd springboot-notes-app-ci
 mvn clean package
+java -jar target/notes-app.jar
 
-java -jar target/notes-0.0.1-SNAPSHOT.jar
+# Access: http://localhost:8081
+# Login: admin/admin123
+Full DevOps Stack
+bash
+# Deploy everything
+kubectl apply -f full-stack.yaml
 
+# Access URLs:
+# Notes App: http://localhost:30081
+# Jenkins: http://localhost:8080  
+# Prometheus: http://localhost:30090
+# Grafana: http://localhost:30030 (admin/admin123)
 
-The app can be accessed at localhost:8081, with the default user id "user" and password "pass". The app creates SQLite db notesdb.sqlite in user's home directory if it doesn't exists there.
+🎯 Application Features
+✅ Create, Edit, Delete notes with rich-text editor
 
-1. Main class is NotesApplication
+✅ User Authentication with Spring Security
 
-2. Spring security is set up to use in-memory authentication for simplicity since this is a demo only. User id is user, password is pass
+✅ Category Management for organizing notes
 
-3. Pick a profile to run:
--Dspring.profiles.active=windows
-or -Dspring.profiles.active=linux
+✅ Search Functionality by content and category
 
-4. You can set a session timeout by passing a VM argument: 
-e.g. -Dserver.servlet.session.timeout=30m
+✅ PDF Export capabilities
 
+✅ Responsive UI with Bootstrap
 
+🔧 CI/CD Pipeline
+✅ GitHub Integration - Webhook triggers
 
+✅ Automated Testing - Maven unit tests
 
+✅ Docker Build - Multi-stage containerization
 
-----
+✅ Kubernetes Deploy - Automated deployment
 
-Features:
-- Notes can be created, edited, deleted, exported to PDF
-- Notes persisted to the DB, in particular to a SQLite db specified in the corresponding profile. Switching to another RDBMS is easy, Postgres example is included in the properties
-- Notes belong to a single user, and the other users cannot see or edit other users' notes, unless the owner marks their note as 'shared'
-- Notes are listed with a short preview on the home page
-- Notes can be assigned to a category. Category name can be chosen via auto-completion based on the existing notes' categories
-- UI is implemented with pagination
-- Search function is performed based on the note content and/or category
-- Notes can be edited by clicking on the "Last edited" link or by viewing the note and clicking Edit. Saving via Ctrl-S is enabled.
-- Notes can be deleted by choosing to edit them and then clicking the Delete button. User will be prompted with a Confirmation dialog to complete this action.
+✅ Health Checks - Application monitoring
 
+📊 Monitoring Stack
+✅ Prometheus - Metrics collection
 
-----
-Screenshots are below
-----
+✅ Grafana - Visualization dashboards
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Index page shows paginated list of notes:</span>
+✅ Application Metrics - Spring Boot actuator
 
-![Alt text](index.png?raw=true "Index page, listing notes - paginated")
+✅ Infrastructure Monitoring - Kubernetes metrics
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Adding a new note:</span>
+📁 Project Structure
+text
+springboot-notes-app-ci/
+├── src/main/java/           # Application source
+├── src/main/resources/      # Configuration files
+├── src/test/java/          # Unit tests
+├── Dockerfile              # Container build
+├── Jenkinsfile            # CI/CD pipeline
+├── full-stack.yaml        # Kubernetes deployment
+└── pom.xml               # Maven configuration
 
-![Alt text](new_note.png?raw=true "Adding new note")
+🎖️ What This Demonstrates
+✅ Complete CI/CD Pipeline - GitHub to Production
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Viewing a note:</span>
+✅ Container Orchestration - Kubernetes deployment
 
-![Alt text](viewing-note.png?raw=true "Viewing a note")
+✅ Infrastructure as Code - Declarative deployments
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Editing a note:</span>
+✅ Monitoring & Observability - Prometheus + Grafana
 
-![Alt text](edit-note.png?raw=true "Editing a note")
+✅ Modern Web Development - Spring Boot + Rich UI
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Search notes form:</span>
+---
 
-![Alt text](search1.png?raw=true "Search notes")
+### **📸 Screenshots**
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Search results shown below, paginated:</span>
+#### **🚀 Notes Application Interface**
+![Notes App Main Page](screenshots/notes_app.png)
 
-![Alt text](search-results.png?raw=true "Search results - paginated")
+#### **🔧 Jenkins CI/CD Pipeline** 
+![Jenkins Pipeline](screenshots/pipeline_Overview.png)
+![Jenkins Pipeline](screenshots/pipeline_Overview_2.png)
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> Export multiple notes to PDF:</span>
+#### **📊 Prometheus Monitoring**
+![Prometheus Targets](screenshots/prometheus.png)
 
-![Alt text](export-to-pdf.png?raw=true "Export multiple notes to PDF")
+#### **📈 Grafana Dashboard**
+![Grafana Dashboard](screenshots/grafana.png)
 
-<span style="color:IndianRed; font-size: 150%; font-weight: bold;"> This is what an exported note looks like in PDF viewer:</span>
-
-![Alt text](exported-note.png?raw=true "Exported note in PDF viewer")
-
+![Grafana Dashboard-2](screenshots/Grafana_2.png)
 
