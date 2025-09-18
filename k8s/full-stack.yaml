@@ -4,7 +4,7 @@ kind: Namespace
 metadata:
   name: monitoring
 ---
-# Prometheus ConfigMap
+# Prometheus ConfigMap - UPDATED
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,17 +14,30 @@ data:
   prometheus.yml: |
     global:
       scrape_interval: 15s
+      evaluation_interval: 15s
     scrape_configs:
     - job_name: 'notes-app'
       static_configs:
       - targets: ['notes-app-service.default.svc.cluster.local:8081']
       metrics_path: /actuator/prometheus
-      scrape_interval: 5s
+      scrape_interval: 10s
+      scrape_timeout: 10s
     - job_name: 'prometheus'
       static_configs:
       - targets: ['localhost:9090']
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
 ---
-# Notes App Deployment
+# Notes App Deployment - ENHANCED
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,19 +54,29 @@ spec:
     metadata:
       labels:
         app: notes-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8081"
     spec:
       containers:
       - name: notes-app
         image: thedk/notes-app-ci:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8081
+          name: http
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "linux"
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m -XX:+UseG1GC"
+        - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          value: "health,info,metrics,prometheus"
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "200m"
           limits:
             memory: "512Mi"
             cpu: "500m"
@@ -61,16 +84,20 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8081
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health
             port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 5
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
 ---
-# Notes App Service
+# Notes App Service - FIXED
 apiVersion: v1
 kind: Service
 metadata:
@@ -87,8 +114,9 @@ spec:
     targetPort: 8081
     nodePort: 30081
     name: http
+    protocol: TCP
 ---
-# Prometheus Deployment
+# Prometheus Deployment - FIXED ARGS
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -106,17 +134,21 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
       - name: prometheus
-        image: prom/prometheus:latest
+        image: prom/prometheus:v2.40.0
         args:
-        - "--config.file=/etc/prometheus/prometheus.yml"
-        - "--storage.tsdb.path=/prometheus/"
-        - "--web.console.libraries=/etc/prometheus/console_libraries"
-        - "--web.console.templates=/etc/prometheus/consoles"
-        - "--web.enable-lifecycle"
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --web.console.libraries=/etc/prometheus/console_libraries
+        - --web.console.templates=/etc/prometheus/consoles
+        - --web.enable-lifecycle
+        - --storage.tsdb.retention.time=30d
+        - --web.enable-admin-api
         ports:
         - containerPort: 9090
+          name: http
         volumeMounts:
         - name: prometheus-config
           mountPath: /etc/prometheus
@@ -124,11 +156,23 @@ spec:
           mountPath: /prometheus
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
             memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
             cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
       volumes:
       - name: prometheus-config
         configMap:
@@ -136,7 +180,48 @@ spec:
       - name: prometheus-storage
         emptyDir: {}
 ---
-# Prometheus Service
+# Prometheus ServiceAccount - NEW
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+# Prometheus ClusterRole - NEW
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - extensions
+  resources:
+  - ingresses
+  verbs: ["get", "list", "watch"]
+---
+# Prometheus ClusterRoleBinding - NEW  
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: monitoring
+---
+# Prometheus Service - FIXED PORT
 apiVersion: v1
 kind: Service
 metadata:
@@ -151,10 +236,11 @@ spec:
   ports:
   - port: 9090
     targetPort: 9090
-    nodePort: 30900
+    nodePort: 30090
     name: prometheus
+    protocol: TCP
 ---
-# Grafana Deployment
+# Grafana Deployment - ENHANCED
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -174,27 +260,48 @@ spec:
     spec:
       containers:
       - name: grafana
-        image: grafana/grafana:latest
+        image: grafana/grafana:9.5.0
         ports:
         - containerPort: 3000
+          name: http
         env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
         - name: GF_SECURITY_ADMIN_PASSWORD
           value: "admin123"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_SERVER_ROOT_URL
+          value: "http://localhost:30030"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-clock-panel,grafana-simple-json-datasource"
         volumeMounts:
         - name: grafana-storage
           mountPath: /var/lib/grafana
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "300m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
       volumes:
       - name: grafana-storage
         emptyDir: {}
 ---
-# Grafana Service
+# Grafana Service - UNCHANGED
 apiVersion: v1
 kind: Service
 metadata:
@@ -211,3 +318,5 @@ spec:
     targetPort: 3000
     nodePort: 30030
     name: grafana
+    protocol: TCP
+
